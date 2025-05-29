@@ -32,17 +32,18 @@
   become: true
 
 - name: Check if SonarQube container exists
-  command: docker ps -a --filter "name=sonarqube" --format "{{.Names}}"
-  register: sonarqube_container
+  shell: docker ps -a | grep -q sonarqube
+  register: sonarqube_exists
   changed_when: false
+  failed_when: false
   become: true
 
 - name: Pull SonarQube image
   command: docker pull sonarqube:latest
-  when: sonarqube_container.stdout != "sonarqube"
+  when: sonarqube_exists.rc != 0
   become: true
 
 - name: Run SonarQube container
   command: docker run -d --name sonarqube -p 9000:9000 --restart always sonarqube:latest
-  when: sonarqube_container.stdout != "sonarqube"
+  when: sonarqube_exists.rc != 0
   become: true
