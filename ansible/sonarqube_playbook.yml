@@ -1,0 +1,7 @@
+---
+- name: Deploy SonarQube
+  hosts: sonarqube-server
+  become: true
+  
+  roles:
+    - sonarqube
