@@ -3,10 +3,10 @@
   setup:
   
 - name: Install Docker on Amazon Linux
-  amazon.aws.amazon_linux_extras:
-    name: docker
-    state: present
+  command: amazon-linux-extras install -y docker
   when: ansible_distribution == "Amazon"
+  register: docker_install_amazon
+  changed_when: docker_install_amazon.rc == 0 and "Installing" in docker_install_amazon.stdout
   become: true
 
 - name: Install Docker on CentOS/RHEL
@@ -43,11 +43,6 @@
   become: true
 
 - name: Run SonarQube container
-  docker_container:
-    name: sonarqube
-    image: sonarqube:latest
-    state: started
-    restart_policy: always
-    ports:
-      - "9000:9000"
+  command: docker run -d --name sonarqube -p 9000:9000 --restart always sonarqube:latest
+  when: sonarqube_container.stdout != "sonarqube"
   become: true
