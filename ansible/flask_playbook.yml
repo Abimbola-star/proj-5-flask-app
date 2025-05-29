@@ -1,6 +1,6 @@
 ---
 - name: Deploy Flask Monitoring Dashboard
-  hosts: flask
+  hosts: flask server
   become: yes
   roles:
     - flask
