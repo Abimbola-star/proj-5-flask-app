@@ -1,6 +1,6 @@
 ---
 - name: Deploy Monitoring Stack (Prometheus & Grafana)
-  hosts: monitoring_servers
+  hosts: monitoring-server
   become: true
   
   roles:
