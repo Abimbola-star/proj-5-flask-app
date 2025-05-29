@@ -1,0 +1,7 @@
+---
+- name: Deploy Nexus Repository Manager
+  hosts: nexus_servers
+  become: true
+  
+  roles:
+    - nexus
