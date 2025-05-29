@@ -1,65 +1,96 @@
 ---
-- name: Check if Amazon Linux
-  raw: cat /etc/os-release | grep -q "Amazon Linux"
-  register: is_amazon_linux
-  changed_when: false
-  ignore_errors: true
-
+- name: Gather facts
+  setup:
+  
 - name: Install Docker on Amazon Linux
-  raw: amazon-linux-extras install -y docker
-  when: is_amazon_linux is succeeded and is_amazon_linux.rc == 0
-  ignore_errors: true
+  command: amazon-linux-extras install -y docker
+  when: ansible_distribution == "Amazon"
+  register: docker_install_amazon
+  changed_when: docker_install_amazon.rc == 0 and "Installing" in docker_install_amazon.stdout
+  become: true
 
-- name: Install Docker on other systems
-  raw: yum install -y docker || apt-get update && apt-get install -y docker.io
-  when: is_amazon_linux is failed or is_amazon_linux.rc != 0
-  ignore_errors: true
+- name: Install Docker on CentOS/RHEL
+  yum:
+    name: docker
+    state: present
+  when: ansible_os_family == "RedHat" and ansible_distribution != "Amazon"
+  become: true
 
-- name: Start and enable Docker
-  raw: systemctl start docker && systemctl enable docker
-  ignore_errors: true
+- name: Install Docker on Debian/Ubuntu
+  apt:
+    name: docker.io
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+  become: true
+
+- name: Start and enable Docker service
+  systemd:
+    name: docker
+    state: started
+    enabled: yes
+  become: true
 
 - name: Create directories for Prometheus and Grafana
-  raw: mkdir -p /opt/prometheus/config /opt/grafana/data
-  ignore_errors: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - /opt/prometheus/config
+    - /opt/grafana/data
+  become: true
 
 - name: Create Prometheus config
-  raw: |
-    cat > /opt/prometheus/config/prometheus.yml << 'EOF'
-    global:
-      scrape_interval: 15s
+  copy:
+    dest: /opt/prometheus/config/prometheus.yml
+    content: |
+      global:
+        scrape_interval: 15s
 
-    scrape_configs:
-      - job_name: 'prometheus'
-        static_configs:
-          - targets: ['localhost:9090']
+      scrape_configs:
+        - job_name: 'prometheus'
+          static_configs:
+            - targets: ['localhost:9090']
 
-      - job_name: 'flask_dashboard'
-        metrics_path: /metrics
-        static_configs:
-          - targets: ['flask-app-alb-415373640.us-east-1.elb.amazonaws.com:80']
-    EOF
-  ignore_errors: true
+        - job_name: 'flask_dashboard'
+          metrics_path: /metrics
+          static_configs:
+            - targets: ['flask-app-alb-415373640.us-east-1.elb.amazonaws.com:80']
+    mode: '0644'
+  become: true
 
 - name: Check if Prometheus container exists
-  raw: docker ps -a | grep -q prometheus
+  shell: docker ps -a | grep -q prometheus
   register: prometheus_exists
   changed_when: false
-  ignore_errors: true
+  failed_when: false
+  become: true
 
-- name: Run Prometheus container if not exists
-  raw: docker run -d --name prometheus -p 9090:9090 -v /opt/prometheus/config:/etc/prometheus prom/prometheus
+- name: Pull Prometheus image
+  command: docker pull prom/prometheus:latest
   when: prometheus_exists.rc != 0
-  ignore_errors: true
+  become: true
+
+- name: Run Prometheus container
+  command: docker run -d --name prometheus -p 9090:9090 -v /opt/prometheus/config:/etc/prometheus --restart always prom/prometheus:latest
+  when: prometheus_exists.rc != 0
+  become: true
 
 - name: Check if Grafana container exists
-  raw: docker ps -a | grep -q grafana
+  shell: docker ps -a | grep -q grafana
   register: grafana_exists
   changed_when: false
-  ignore_errors: true
+  failed_when: false
+  become: true
 
-- name: Run Grafana container if not exists
-  raw: docker run -d --name grafana -p 3000:3000 -v /opt/grafana/data:/var/lib/grafana grafana/grafana
+- name: Pull Grafana image
+  command: docker pull grafana/grafana:latest
   when: grafana_exists.rc != 0
-  ignore_errors: true
+  become: true
+
+- name: Run Grafana container
+  command: docker run -d --name grafana -p 3000:3000 -v /opt/grafana/data:/var/lib/grafana --restart always grafana/grafana:latest
+  when: grafana_exists.rc != 0
+  become: true
 ...
