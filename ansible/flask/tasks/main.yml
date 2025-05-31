@@ -153,6 +153,12 @@
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
         }
+
+        location /metrics {
+          proxy_pass http://127.0.0.1:8000/metrics;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+        }
       }
     mode: '0644'
   become: true
@@ -161,4 +167,15 @@
   systemd:
     name: nginx
     state: restarted
+  become: true
+
+- name: Wait for Flask app to be accessible
+  uri:
+    url: http://localhost/metrics
+    status_code: 200
+  register: flask_result
+  until: flask_result.status == 200
+  retries: 5
+  delay: 10
+  ignore_errors: true
   become: true
