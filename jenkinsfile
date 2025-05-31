@@ -13,6 +13,15 @@ pipeline {
             }
         }
 
+        stage('Install Ansible') {
+            steps {
+                sh '''
+                    pip3 install --user ansible
+                    export PATH=$PATH:~/.local/bin
+                '''
+            }
+        }
+
         stage('SonarQube Analysis') {
             steps {
                 withCredentials([string(credentialsId: 'SonarQube-Token', variable: 'SONARQUBE_TOKEN')]) {
@@ -36,7 +45,8 @@ pipeline {
                 sshagent(['ansible-key']) {
                     sh '''
                         export ANSIBLE_HOST_KEY_CHECKING=False
-                        ansible-playbook flask_playbook.yml -i hosts.ini
+                        export PATH=$PATH:~/.local/bin
+                        ansible-playbook ansible/flask_playbook.yml -i ansible/hosts.ini
                     '''
                 }
             }
@@ -52,4 +62,3 @@ pipeline {
         }
     }
 }
-
