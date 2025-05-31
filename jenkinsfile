@@ -35,17 +35,16 @@ pipeline {
         }
 
         stage('Deploy with Ansible') {
-            steps {
-                sshagent(['ansible-key']) {
-                    sh '''
-                        ssh -o StrictHostKeyChecking=no ${REMOTE_HOST}'
-                        ansible-playbook flask_playbook.yml -i hosts.ini
-                        '
-                    '''
-                }
-            }
+        steps {
+        sshagent(['ansible-key']) {
+            sh '''
+                export ANSIBLE_HOST_KEY_CHECKING=False
+                ansible-playbook flask_playbook.yml -i hosts.ini
+            '''
         }
     }
+}
+
 
     post {
         success {
