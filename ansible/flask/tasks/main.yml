@@ -53,7 +53,7 @@
     name:
       - flask
       - gunicorn
-      - prometheus_client
+      - prometheus-flask-exporter
     executable: pip3
     state: present
   become: true
@@ -69,31 +69,46 @@
   copy:
     dest: /opt/flask_dashboard/app.py
     content: |
-      from flask import Flask, Response
-      from prometheus_client import Counter, generate_latest, CONTENT_TYPE_LATEST, Gauge
+      from flask import Flask, request
+      from prometheus_flask_exporter import PrometheusMetrics
 
       app = Flask(__name__)
+      metrics = PrometheusMetrics(app)
 
-      # Create metrics
-      REQUESTS = Counter('flask_app_requests_total', 'Total number of requests to the Flask app')
-      ACTIVE_USERS = Gauge('flask_app_active_users', 'Number of active users')
+      # Add some default metrics
+      metrics.info('app_info', 'Application info', version='1.0.0')
 
-      # Set some initial values
-      ACTIVE_USERS.set(5)  # Example value
-
+      # Custom metrics
+      @metrics.counter('http_requests_total', 'Total HTTP Requests',
+                  labels={'endpoint': lambda: request.endpoint})
       @app.route('/')
-      def home():
-          REQUESTS.inc()  # Increment the counter
+      def dashboard():
           return '''
-          <h1>Flask Monitoring Dashboard</h1>
-          <p>This is a simple Flask app with Prometheus metrics.</p>
-          <p>Visit <a href="/metrics">/metrics</a> to see the Prometheus metrics.</p>
+          <html>
+          <head>
+              <title>CEEYIT Dashboard</title>
+              <style>
+                  body { font-family: Arial; background: #FEFEFE; text-align: center; margin-top: 100px; }
+                  h1 { color: #2A9D8F; }
+                  p { font-size: 18px; color: #264653; }
+                  .metrics-link { 
+                      display: inline-block; 
+                      margin-top: 20px; 
+                      padding: 10px 15px; 
+                      background-color: #4CAF50; 
+                      color: white; 
+                      text-decoration: none; 
+                      border-radius: 4px; 
+                  }
+              </style>
+          </head>
+          <body>
+              <h1>CEEYIT Monitoring Dashboard</h1>
+              <p>Your DevOps metrics will be visualized here.</p>
+              <p><a href="/metrics" class="metrics-link">View Prometheus Metrics</a></p>
+          </body>
+          </html>
           '''
-
-      @app.route('/metrics')
-      def metrics():
-          REQUESTS.inc()  # Increment the counter
-          return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
       if __name__ == '__main__':
           app.run(host='0.0.0.0', port=8000)
@@ -106,7 +121,7 @@
     content: |
       flask
       gunicorn
-      prometheus_client
+      prometheus-flask-exporter
     mode: '0644'
   become: true
 
@@ -136,7 +151,7 @@
 - name: Enable and start flaskapp service
   systemd:
     name: flaskapp
-    state: started
+    state: restarted
     enabled: yes
   become: true
 
@@ -149,13 +164,7 @@
         server_name _;
 
         location / {
-          proxy_pass http://localhost:8000;
-          proxy_set_header Host $host;
-          proxy_set_header X-Real-IP $remote_addr;
-        }
-
-        location /metrics {
-          proxy_pass http://localhost:8000/metrics;
+          proxy_pass http://127.0.0.1:8000;
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
         }
@@ -167,15 +176,4 @@
   systemd:
     name: nginx
     state: restarted
-  become: true
-
-- name: Wait for Flask app to be accessible
-  uri:
-    url: http://localhost/metrics
-    status_code: 200
-  register: flask_result
-  until: flask_result.status == 200
-  retries: 5
-  delay: 10
-  ignore_errors: true
   become: true
