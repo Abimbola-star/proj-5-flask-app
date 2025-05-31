@@ -5,8 +5,7 @@ pipeline {
         APP_NAME = 'flask-monitoring-dashboard'
         APP_VERSION = "${env.BUILD_NUMBER}"
         SONARQUBE_URL = "http://34.201.46.111:9000/"
-        REMOTE_HOST= "ec2-user@54.174.164.51"
-        SSH_KEY = credentials('ansible-key')
+        REMOTE_HOST = "ec2-user@54.174.164.51"
     }
 
     stages {
@@ -35,16 +34,16 @@ pipeline {
         }
 
         stage('Deploy with Ansible') {
-        steps {
-        sshagent(['ansible-key']) {
-            sh '''
-                export ANSIBLE_HOST_KEY_CHECKING=False
-                ansible-playbook flask_playbook.yml -i hosts.ini
-            '''
+            steps {
+                sshagent(['ansible-key']) {
+                    sh '''
+                        export ANSIBLE_HOST_KEY_CHECKING=False
+                        ansible-playbook flask_playbook.yml -i hosts.ini
+                    '''
+                }
+            }
         }
     }
-}
-
 
     post {
         success {
@@ -54,5 +53,4 @@ pipeline {
             echo 'Pipeline failed!'
         }
     }
-}
 }
