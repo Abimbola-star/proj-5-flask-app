@@ -35,9 +35,9 @@ pipeline {
 
         stage('Deploy with Ansible') {
             steps {
-                sshagent(['ansible']) {
+                sshagent(['ansible-key']) {
                     sh '''
-                        ansible-playbook flask_playbook.yml -i hosts.ini -vv
+                        ansible-playbook flask_playbook.yml -i hosts.ini
                     '''
                 }
             }
