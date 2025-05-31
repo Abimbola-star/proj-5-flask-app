@@ -5,7 +5,6 @@ pipeline {
         APP_NAME = 'flask-monitoring-dashboard'
         APP_VERSION = "${env.BUILD_NUMBER}"
         SONARQUBE_URL = "http://34.201.46.111:9000/"
-        SONARQUBE_LOGIN = 'SonarQube'
     }
 
     stages {
@@ -20,12 +19,11 @@ pipeline {
                 script {
                     def scannerHome = tool 'SonarQubeScanner'
                     withSonarQubeEnv('SonarQube') {
-                        sh sh "sonar-scanner \
+                        sh """${scannerHome}/bin/sonar-scanner \
                              -Dsonar.projectKey=project_5 \
                              -Dsonar.sources=. \
-                             -Dsonar.host.url=${SONARQUBE_URL}
-                             -Dsonar.token=${SONARQUBE_LOGIN}
-                           "
+                             -Dsonar.projectVersion=${APP_VERSION} \
+                             -Dsonar.host.url=${SONARQUBE_URL}"""
                     }
                 }
             }
