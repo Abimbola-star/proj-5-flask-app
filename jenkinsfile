@@ -1,11 +1,14 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'willhallonline/ansible:latest'
+        }
+    }
 
     environment {
         APP_NAME = 'flask-monitoring-dashboard'
         APP_VERSION = "${env.BUILD_NUMBER}"
         SONARQUBE_URL = "http://34.201.46.111:9000/"
-        REMOTE_HOST = "ec2-user@54.174.164.51"
     }
 
     stages {
@@ -54,3 +57,4 @@ pipeline {
         }
     }
 }
+
