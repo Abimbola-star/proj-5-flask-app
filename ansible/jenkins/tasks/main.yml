@@ -73,15 +73,26 @@
     enabled: yes
   become: true
 
-# Verify service is accessible
-- name: Wait for Jenkins to be accessible
+# Wait for Jenkins to start up
+- name: Wait for Jenkins to start
   uri:
     url: http://localhost:8080
-    status_code: 200
+    status_code: [200, 403]  # Accept both 200 and 403 (auth required) as success
   register: jenkins_result
-  until: jenkins_result.status == 200
+  until: jenkins_result.status == 200 or jenkins_result.status == 403
   retries: 10
   delay: 30
-  ignore_errors: true
   become: true
+
+# Display Jenkins initial admin password
+- name: Get Jenkins initial admin password
+  shell: docker exec jenkins cat /var/jenkins_home/secrets/initialAdminPassword || echo "Password not available yet"
+  register: jenkins_password
+  become: true
+  ignore_errors: true
+
+- name: Display Jenkins initial admin password
+  debug:
+    msg: "Jenkins initial admin password: {{ jenkins_password.stdout }}"
+  when: jenkins_password is defined and jenkins_password.stdout != "Password not available yet"
 ...
