@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        docker {
-            image 'willhallonline/ansible:latest'
-        }
-    }
-
+    agent any
     environment {
         APP_NAME = 'flask-monitoring-dashboard'
         APP_VERSION = "${env.BUILD_NUMBER}"
