@@ -5,7 +5,7 @@ pipeline {
         APP_NAME = 'flask-monitoring-dashboard'
         APP_VERSION = "${env.BUILD_NUMBER}"
         SONARQUBE_URL = "http://34.201.46.111:9000/"
-        SONARQUBE_LOGIN = 'SonarQube'
+        SONARQUBE_LOGIN = 'SonarQube-Token'
     }
 
     stages {
