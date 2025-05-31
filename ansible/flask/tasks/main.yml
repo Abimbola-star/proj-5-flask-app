@@ -71,7 +71,7 @@
 
 - name: Create simple Flask app file
   copy:
-    src: ansible\flask\files\app.py
+    src: app.py
     dest: /opt/flask_dashboard/app.py
     owner: ec2-user
     group: ec2-user
