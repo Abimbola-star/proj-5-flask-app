@@ -5,6 +5,8 @@ pipeline {
         APP_NAME = 'flask-monitoring-dashboard'
         APP_VERSION = "${env.BUILD_NUMBER}"
         SONARQUBE_URL = "http://34.201.46.111:9000/"
+        REMOTE_HOST= "ec2-user@54.174.164.51"
+        SSH_KEY = credentials('ansible-key')
     }
 
     stages {
@@ -14,30 +16,31 @@ pipeline {
             }
         }
 
-    stage('SonarQube Analysis') {
-    steps {
-        withCredentials([string(credentialsId: 'SonarQube-Token', variable: 'SONARQUBE_TOKEN')]) {
-            script {
-                def scannerHome = tool 'SonarQubeScanner'
-                withSonarQubeEnv('SonarQube') {
-                    sh """${scannerHome}/bin/sonar-scanner \
-                        -Dsonar.projectKey=project_5 \
-                        -Dsonar.sources=. \
-                        -Dsonar.projectVersion=${APP_VERSION} \
-                        -Dsonar.host.url=${SONARQUBE_URL} \
-                        -Dsonar.login=${SONARQUBE_TOKEN}"""
+        stage('SonarQube Analysis') {
+            steps {
+                withCredentials([string(credentialsId: 'SonarQube-Token', variable: 'SONARQUBE_TOKEN')]) {
+                    script {
+                        def scannerHome = tool 'SonarQubeScanner'
+                        withSonarQubeEnv('SonarQube') {
+                            sh """${scannerHome}/bin/sonar-scanner \
+                                -Dsonar.projectKey=project_5 \
+                                -Dsonar.sources=. \
+                                -Dsonar.projectVersion=${APP_VERSION} \
+                                -Dsonar.host.url=${SONARQUBE_URL} \
+                                -Dsonar.login=${SONARQUBE_TOKEN}"""
+                        }
+                    }
                 }
             }
         }
-    }
-}
-
 
         stage('Deploy with Ansible') {
             steps {
                 sshagent(['ansible-key']) {
                     sh '''
+                        ssh -o StrictHostKeyChecking=no ${REMOTE_HOST}'
                         ansible-playbook flask_playbook.yml -i hosts.ini
+                        '
                     '''
                 }
             }
