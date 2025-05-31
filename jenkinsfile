@@ -3,7 +3,7 @@ pipeline {
     environment {
         APP_NAME = 'flask-monitoring-dashboard'
         APP_VERSION = "${env.BUILD_NUMBER}"
-        SONARQUBE_URL = "http://34.201.46.111:9000/"
+        SONARQUBE_URL = "http://34.228.98.217:9000/"
     }
 
     stages {
