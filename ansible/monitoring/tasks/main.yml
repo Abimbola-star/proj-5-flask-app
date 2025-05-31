@@ -60,37 +60,102 @@
     mode: '0644'
   become: true
 
-- name: Check if Prometheus container exists
-  shell: docker ps -a | grep -q prometheus
-  register: prometheus_exists
-  changed_when: false
-  failed_when: false
+# Remove existing containers to avoid conflicts
+- name: Remove existing Prometheus container if any
+  shell: docker rm -f prometheus || true
   become: true
 
-- name: Pull Prometheus image
-  command: docker pull prom/prometheus:latest
-  when: prometheus_exists.rc != 0
+- name: Remove existing Grafana container if any
+  shell: docker rm -f grafana || true
   become: true
 
-- name: Run Prometheus container
-  command: docker run -d --name prometheus -p 9090:9090 -v /opt/prometheus/config:/etc/prometheus --restart always prom/prometheus:latest
-  when: prometheus_exists.rc != 0
+# Create systemd service files for containers
+- name: Create Prometheus systemd service
+  copy:
+    dest: /etc/systemd/system/prometheus-container.service
+    content: |
+      [Unit]
+      Description=Prometheus Container
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      TimeoutStartSec=0
+      Restart=always
+      ExecStartPre=-/usr/bin/docker stop prometheus
+      ExecStartPre=-/usr/bin/docker rm prometheus
+      ExecStartPre=/usr/bin/docker pull prom/prometheus:latest
+      ExecStart=/usr/bin/docker run --rm --name prometheus -p 9090:9090 -v /opt/prometheus/config:/etc/prometheus prom/prometheus:latest
+      ExecStop=/usr/bin/docker stop prometheus
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
   become: true
 
-- name: Check if Grafana container exists
-  shell: docker ps -a | grep -q grafana
-  register: grafana_exists
-  changed_when: false
-  failed_when: false
+- name: Create Grafana systemd service
+  copy:
+    dest: /etc/systemd/system/grafana-container.service
+    content: |
+      [Unit]
+      Description=Grafana Container
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      TimeoutStartSec=0
+      Restart=always
+      ExecStartPre=-/usr/bin/docker stop grafana
+      ExecStartPre=-/usr/bin/docker rm grafana
+      ExecStartPre=/usr/bin/docker pull grafana/grafana:latest
+      ExecStart=/usr/bin/docker run --rm --name grafana -p 3000:3000 -v /opt/grafana/data:/var/lib/grafana grafana/grafana:latest
+      ExecStop=/usr/bin/docker stop grafana
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
   become: true
 
-- name: Pull Grafana image
-  command: docker pull grafana/grafana:latest
-  when: grafana_exists.rc != 0
+# Reload systemd and start services
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
   become: true
 
-- name: Run Grafana container
-  command: docker run -d --name grafana -p 3000:3000 -v /opt/grafana/data:/var/lib/grafana --restart always grafana/grafana:latest
-  when: grafana_exists.rc != 0
+- name: Enable and start Prometheus service
+  systemd:
+    name: prometheus-container
+    state: started
+    enabled: yes
+  become: true
+
+- name: Enable and start Grafana service
+  systemd:
+    name: grafana-container
+    state: started
+    enabled: yes
+  become: true
+
+# Verify services are accessible
+- name: Wait for Prometheus to be accessible
+  uri:
+    url: http://localhost:9090
+    status_code: 200
+  register: prometheus_result
+  until: prometheus_result.status == 200
+  retries: 5
+  delay: 10
+  ignore_errors: true
+  become: true
+
+- name: Wait for Grafana to be accessible
+  uri:
+    url: http://localhost:3000
+    status_code: 200
+  register: grafana_result
+  until: grafana_result.status == 200
+  retries: 5
+  delay: 10
+  ignore_errors: true
   become: true
 ...

@@ -1,58 +1,87 @@
 ---
 - name: Gather facts
   setup:
-  when: ansible_facts == {}
-
-- name: Install Docker and Git on Amazon Linux
-  block:
-    - name: Install Docker via amazon-linux-extras
-      command: amazon-linux-extras install -y docker
-      register: docker_install
-      changed_when: "'Nothing to do' not in docker_install.stdout"
-      
-    - name: Install Git
-      yum:
-        name: git
-        state: present
+  
+- name: Install Docker on Amazon Linux
+  command: amazon-linux-extras install -y docker
   when: ansible_distribution == "Amazon"
+  register: docker_install_amazon
+  changed_when: docker_install_amazon.rc == 0 and "Installing" in docker_install_amazon.stdout
+  become: true
 
-- name: Install Docker and Git on other systems
-  block:
-    - name: Install Docker and Git on RedHat family
-      yum:
-        name:
-          - docker
-          - git
-        state: present
-      when: ansible_os_family == "RedHat"
-      
-    - name: Install Docker and Git on Debian family
-      apt:
-        name:
-          - docker.io
-          - git
-        state: present
-        update_cache: yes
-      when: ansible_os_family == "Debian"
-  when: ansible_distribution != "Amazon"
+- name: Install Docker on CentOS/RHEL
+  yum:
+    name: docker
+    state: present
+  when: ansible_os_family == "RedHat" and ansible_distribution != "Amazon"
+  become: true
 
-- name: Start and enable Docker
+- name: Install Docker on Debian/Ubuntu
+  apt:
+    name: docker.io
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+  become: true
+
+- name: Start and enable Docker service
   systemd:
     name: docker
     state: started
     enabled: yes
+  become: true
 
-- name: Add ec2-user to docker group
-  user:
-    name: ec2-user
-    groups: docker
-    append: yes
+# Remove existing container to avoid conflicts
+- name: Remove existing Jenkins container if any
+  shell: docker rm -f jenkins || true
+  become: true
 
-- name: Check if Jenkins container is running
-  command: docker ps -f name=jenkins
-  register: jenkins_check
-  changed_when: false
+# Create systemd service file for Jenkins container
+- name: Create Jenkins systemd service
+  copy:
+    dest: /etc/systemd/system/jenkins-container.service
+    content: |
+      [Unit]
+      Description=Jenkins Container
+      After=docker.service
+      Requires=docker.service
 
-- name: Run Jenkins container
-  command: docker run -d --name jenkins -p 8080:8080 -p 50000:50000 jenkins/jenkins:lts
-  when: "'jenkins' not in jenkins_check.stdout"
+      [Service]
+      TimeoutStartSec=0
+      Restart=always
+      ExecStartPre=-/usr/bin/docker stop jenkins
+      ExecStartPre=-/usr/bin/docker rm jenkins
+      ExecStartPre=/usr/bin/docker pull jenkins/jenkins:lts
+      ExecStart=/usr/bin/docker run --rm --name jenkins -p 8080:8080 -p 50000:50000 -v jenkins_home:/var/jenkins_home jenkins/jenkins:lts
+      ExecStop=/usr/bin/docker stop jenkins
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  become: true
+
+# Reload systemd and start service
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+  become: true
+
+- name: Enable and start Jenkins service
+  systemd:
+    name: jenkins-container
+    state: started
+    enabled: yes
+  become: true
+
+# Verify service is accessible
+- name: Wait for Jenkins to be accessible
+  uri:
+    url: http://localhost:8080
+    status_code: 200
+  register: jenkins_result
+  until: jenkins_result.status == 200
+  retries: 10
+  delay: 30
+  ignore_errors: true
+  become: true
+...

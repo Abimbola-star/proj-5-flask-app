@@ -31,20 +31,57 @@
     enabled: yes
   become: true
 
-- name: Check if Nexus container exists
-  shell: docker ps -a | grep -q nexus
-  register: nexus_exists
-  changed_when: false
-  failed_when: false
+# Remove existing container to avoid conflicts
+- name: Remove existing Nexus container if any
+  shell: docker rm -f nexus || true
   become: true
 
-- name: Pull Nexus image
-  command: docker pull sonatype/nexus3:latest
-  when: nexus_exists.rc != 0
+# Create systemd service file for Nexus container
+- name: Create Nexus systemd service
+  copy:
+    dest: /etc/systemd/system/nexus-container.service
+    content: |
+      [Unit]
+      Description=Nexus Container
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      TimeoutStartSec=0
+      Restart=always
+      ExecStartPre=-/usr/bin/docker stop nexus
+      ExecStartPre=-/usr/bin/docker rm nexus
+      ExecStartPre=/usr/bin/docker pull sonatype/nexus3:latest
+      ExecStart=/usr/bin/docker run --rm --name nexus -p 8081:8081 sonatype/nexus3:latest
+      ExecStop=/usr/bin/docker stop nexus
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
   become: true
 
-- name: Run Nexus container
-  command: docker run -d --name nexus -p 8081:8081 --restart always sonatype/nexus3:latest
-  when: nexus_exists.rc != 0
+# Reload systemd and start service
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+  become: true
+
+- name: Enable and start Nexus service
+  systemd:
+    name: nexus-container
+    state: started
+    enabled: yes
+  become: true
+
+# Verify service is accessible
+- name: Wait for Nexus to be accessible
+  uri:
+    url: http://localhost:8081
+    status_code: 200
+  register: nexus_result
+  until: nexus_result.status == 200
+  retries: 10
+  delay: 30
+  ignore_errors: true
   become: true
 ...

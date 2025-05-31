@@ -31,19 +31,57 @@
     enabled: yes
   become: true
 
-- name: Check if SonarQube container exists
-  shell: docker ps -a | grep -q sonarqube
-  register: sonarqube_exists
-  changed_when: false
-  failed_when: false
+# Remove existing container to avoid conflicts
+- name: Remove existing SonarQube container if any
+  shell: docker rm -f sonarqube || true
   become: true
 
-- name: Pull SonarQube image
-  command: docker pull sonarqube:latest
-  when: sonarqube_exists.rc != 0
+# Create systemd service file for SonarQube container
+- name: Create SonarQube systemd service
+  copy:
+    dest: /etc/systemd/system/sonarqube-container.service
+    content: |
+      [Unit]
+      Description=SonarQube Container
+      After=docker.service
+      Requires=docker.service
+
+      [Service]
+      TimeoutStartSec=0
+      Restart=always
+      ExecStartPre=-/usr/bin/docker stop sonarqube
+      ExecStartPre=-/usr/bin/docker rm sonarqube
+      ExecStartPre=/usr/bin/docker pull sonarqube:latest
+      ExecStart=/usr/bin/docker run --rm --name sonarqube -p 9000:9000 sonarqube:latest
+      ExecStop=/usr/bin/docker stop sonarqube
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
   become: true
 
-- name: Run SonarQube container
-  command: docker run -d --name sonarqube -p 9000:9000 --restart always sonarqube:latest
-  when: sonarqube_exists.rc != 0
+# Reload systemd and start service
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
   become: true
+
+- name: Enable and start SonarQube service
+  systemd:
+    name: sonarqube-container
+    state: started
+    enabled: yes
+  become: true
+
+# Verify service is accessible
+- name: Wait for SonarQube to be accessible
+  uri:
+    url: http://localhost:9000
+    status_code: 200
+  register: sonarqube_result
+  until: sonarqube_result.status == 200
+  retries: 10
+  delay: 30
+  ignore_errors: true
+  become: true
+...
