@@ -1,87 +1,108 @@
 ---
-- name: Gather facts
-  setup:
-  
-- name: Install Docker on Amazon Linux
-  command: amazon-linux-extras install -y docker
-  when: ansible_distribution == "Amazon"
-  register: docker_install_amazon
-  changed_when: docker_install_amazon.rc == 0 and "Installing" in docker_install_amazon.stdout
+- name: Install Docker and Deploy Persistent SonarQube + PostgreSQL
+  hosts: all
   become: true
+  tasks:
 
-- name: Install Docker on CentOS/RHEL
-  yum:
-    name: docker
-    state: present
-  when: ansible_os_family == "RedHat" and ansible_distribution != "Amazon"
-  become: true
+    - name: Gather facts
+      setup:
+    - name: Install Docker on Amazon Linux
+      command: amazon-linux-extras install -y docker
+      when: ansible_distribution == "Amazon"
 
-- name: Install Docker on Debian/Ubuntu
-  apt:
-    name: docker.io
-    state: present
-    update_cache: yes
-  when: ansible_os_family == "Debian"
-  become: true
+    - name: Install Docker on CentOS/RHEL
+      yum:
+        name: docker
+        state: present
+      when: ansible_os_family == "RedHat" and ansible_distribution != "Amazon"
 
-- name: Start and enable Docker service
-  systemd:
-    name: docker
-    state: started
-    enabled: yes
-  become: true
+    - name: Install Docker on Debian/Ubuntu
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
 
-# Remove existing container to avoid conflicts
-- name: Remove existing SonarQube container if any
-  shell: docker rm -f sonarqube || true
-  become: true
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
 
-# Create systemd service file for SonarQube container
-- name: Create SonarQube systemd service
-  copy:
-    dest: /etc/systemd/system/sonarqube-container.service
-    content: |
-      [Unit]
-      Description=SonarQube Container
-      After=docker.service
-      Requires=docker.service
+    - name: Create Docker volumes for SonarQube and PostgreSQL
+      docker_volume:
+        name: "{{ item }}"
+      loop:
+        - sonarqube_data
+        - sonarqube_extensions
+        - postgresql_data
 
-      [Service]
-      TimeoutStartSec=0
-      Restart=always
-      ExecStartPre=-/usr/bin/docker stop sonarqube
-      ExecStartPre=-/usr/bin/docker rm sonarqube
-      ExecStartPre=/usr/bin/docker pull sonarqube:latest
-      ExecStart=/usr/bin/docker run --rm --name sonarqube -p 9000:9000 sonarqube:latest
-      ExecStop=/usr/bin/docker stop sonarqube
+    - name: Run PostgreSQL container
+      docker_container:
+        name: postgres
+        image: postgres:13
+        state: started
+        restart_policy: always
+        env:
+          POSTGRES_USER: sonar
+          POSTGRES_PASSWORD: sonar
+          POSTGRES_DB: sonarqube
+        volumes:
+          - postgresql_data:/var/lib/postgresql/data
+        published_ports:
+          - 5432:5432
 
-      [Install]
-      WantedBy=multi-user.target
-    mode: '0644'
-  become: true
 
-# Reload systemd and start service
-- name: Reload systemd daemon
-  systemd:
-    daemon_reload: yes
-  become: true
+    - name: Remove existing SonarQube container if any
+      shell: docker rm -f sonarqube || true
 
-- name: Enable and start SonarQube service
-  systemd:
-    name: sonarqube-container
-    state: started
-    enabled: yes
-  become: true
+    - name: Create SonarQube systemd service
+      copy:
+        dest: /etc/systemd/system/sonarqube-container.service
+        content: |
+          [Unit]
+          Description=SonarQube Container
+          After=docker.service
+          Requires=docker.service
 
-# Verify service is accessible
-- name: Wait for SonarQube to be accessible
-  uri:
-    url: http://localhost:9000
-    status_code: 200
-  register: sonarqube_result
-  until: sonarqube_result.status == 200
-  retries: 10
-  delay: 30
-  ignore_errors: true
-  become: true
+          [Service]
+          TimeoutStartSec=0
+          Restart=always
+          ExecStartPre=-/usr/bin/docker stop sonarqube
+          ExecStartPre=-/usr/bin/docker rm sonarqube
+          ExecStartPre=/usr/bin/docker pull sonarqube:9.9-community
+          ExecStart=/usr/bin/docker run \
+            --name sonarqube \
+            -p 9000:9000 \
+            -e SONAR_JDBC_URL=jdbc:postgresql://localhost:5432/sonarqube \
+            -e SONAR_JDBC_USERNAME=sonar \
+            -e SONAR_JDBC_PASSWORD=sonar \
+            -v sonarqube_data:/opt/sonarqube/data \
+            -v sonarqube_extensions:/opt/sonarqube/extensions \
+            sonarqube:9.9-community
+          ExecStop=/usr/bin/docker stop sonarqube
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: '0644'
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start SonarQube container service
+      systemd:
+        name: sonarqube-container
+        state: started
+        enabled: yes
+
+    - name: Wait for SonarQube to be accessible
+      uri:
+        url: http://localhost:9000
+        status_code: 200
+      register: sonarqube_result
+      until: sonarqube_result.status == 200
+      retries: 10
+      delay: 30
+      ignore_errors: true
 ...
